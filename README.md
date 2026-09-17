@@ -87,6 +87,12 @@ evidence = evidence_from_hermes_receipt(
 
 The adapter performs no file or runtime writes and does not mutate its input mapping. It only converts an already-read receipt object into validated `Evidence`.
 
+### Operational validation scope
+
+The adapter contract was derived from read-only inspection of Frozen Legacy Hermes artifacts at its pinned Git HEAD. Tests use sanitized structures matching the observed runtime-mirror, reviewer receipt, non-verdict successful receipt, and receipt-history shapes.
+
+This validates **format compatibility and fail-closed behavior**. It does not mean the module has been wired into the separate Hermes Agent OS runtime. Runtime wiring remains a distinct integration step and must occur in the Agent OS workspace/repository without modifying Frozen Legacy.
+
 ## Run gates
 
 ```bash
