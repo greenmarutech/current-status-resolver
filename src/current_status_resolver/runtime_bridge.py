@@ -18,6 +18,14 @@ from typing import Any
 from current_status_resolver import Evidence, Resolver, Verdict, VerdictKind
 from current_status_resolver.hermes_adapter import evidence_from_hermes_receipt
 
+ACCEPTANCE_PASS_VERDICTS = frozenset(
+    {
+        VerdictKind.PASS,
+        VerdictKind.PROVEN,
+        VerdictKind.PROVEN_NATIVE_E2E,
+    }
+)
+
 
 @dataclass(frozen=True)
 class RejectedReceipt:
@@ -46,6 +54,7 @@ class StreamStatus:
     stage: str
     verdict: Verdict
     safe_to_consume: bool
+    acceptance_passed: bool
     conflicts: tuple[ConflictingDuplicate, ...] = ()
 
 
@@ -55,6 +64,7 @@ class BridgeResult:
     rejected: tuple[RejectedReceipt, ...]
     duplicate_snapshots: tuple[DuplicateSnapshot, ...]
     safe_to_consume: bool
+    acceptance_passed: bool
 
     def to_dict(self) -> dict[str, Any]:
         """Return stable JSON-compatible output for a Boss/runtime consumer."""
@@ -221,6 +231,7 @@ def resolve_receipt_files(
                 stage=stage,
                 verdict=verdict,
                 safe_to_consume=safe,
+                acceptance_passed=safe and verdict.kind in ACCEPTANCE_PASS_VERDICTS,
                 conflicts=tuple(conflicts),
             )
         )
@@ -228,11 +239,15 @@ def resolve_receipt_files(
     overall_safe = not rejected and bool(stream_results) and all(
         stream.safe_to_consume for stream in stream_results
     )
+    acceptance_passed = overall_safe and all(
+        stream.acceptance_passed for stream in stream_results
+    )
     return BridgeResult(
         streams=tuple(stream_results),
         rejected=tuple(rejected),
         duplicate_snapshots=tuple(duplicate_snapshots),
         safe_to_consume=overall_safe,
+        acceptance_passed=acceptance_passed,
     )
 
 
@@ -284,10 +299,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             stage=args.stage,
         )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(json.dumps({"safe_to_consume": False, "error": str(exc)}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "safe_to_consume": False,
+                    "acceptance_passed": False,
+                    "error": str(exc),
+                },
+                indent=2,
+            )
+        )
         return 2
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
-    return 0 if result.safe_to_consume else 2
+    if not result.safe_to_consume:
+        return 2
+    return 0 if result.acceptance_passed else 1
 
 
 if __name__ == "__main__":
@@ -295,6 +321,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "ACCEPTANCE_PASS_VERDICTS",
     "BridgeResult",
     "ConflictingDuplicate",
     "DuplicateSnapshot",

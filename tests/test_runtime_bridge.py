@@ -63,6 +63,8 @@ def test_operational_fail_to_proven_native_e2e_supersession(tmp_path: Path) -> N
 
     stream = result.streams[0]
     assert result.safe_to_consume is True
+    assert result.acceptance_passed is True
+    assert stream.acceptance_passed is True
     assert stream.verdict.kind == VerdictKind.PROVEN_NATIVE_E2E
     assert stream.verdict.current_id == proven_id
     assert stream.verdict.history_ids == (fail_id, proven_id)
@@ -79,6 +81,7 @@ def test_no_supersession_is_inferred_from_attempt_number(tmp_path: Path) -> None
     )
     result = resolve_receipt_files([first, second])
     assert result.streams[0].verdict.kind == VerdictKind.PROVEN
+    assert result.acceptance_passed is True
     assert result.streams[0].verdict.superseded_ids == ()
 
 
@@ -89,6 +92,7 @@ def test_conflicting_latest_receipts_are_ambiguous_and_unsafe(tmp_path: Path) ->
     )
     result = resolve_receipt_files([first, second])
     assert result.safe_to_consume is False
+    assert result.acceptance_passed is False
     assert result.streams[0].verdict.kind == VerdictKind.AMBIGUOUS
 
 
@@ -100,6 +104,7 @@ def test_identical_current_and_history_snapshots_are_deduplicated(tmp_path: Path
     )
     result = resolve_receipt_files([current, history])
     assert result.safe_to_consume is True
+    assert result.acceptance_passed is True
     assert result.streams[0].verdict.history_ids == (
         _evidence_id("TASK-1", "REVIEWER", 1),
     )
@@ -111,6 +116,7 @@ def test_same_evidence_id_with_different_content_fails_closed(tmp_path: Path) ->
     second = _write_receipt(tmp_path / "second.json", decision="FAIL")
     result = resolve_receipt_files([first, second])
     assert result.safe_to_consume is False
+    assert result.acceptance_passed is False
     assert result.streams[0].verdict.kind == VerdictKind.AMBIGUOUS
     assert len(result.streams[0].conflicts) == 1
 
@@ -121,6 +127,7 @@ def test_non_authoritative_receipt_is_rejected_without_promoting_pass(
     path = _write_receipt(tmp_path / "failed.json", decision="PASS", status="FAILED")
     result = resolve_receipt_files([path])
     assert result.safe_to_consume is False
+    assert result.acceptance_passed is False
     assert result.streams == ()
     assert len(result.rejected) == 1
 
@@ -139,6 +146,7 @@ def test_rejected_receipt_makes_mixed_result_unsafe(tmp_path: Path) -> None:
     assert result.streams[0].verdict.kind == VerdictKind.PASS
     assert len(result.rejected) == 1
     assert result.safe_to_consume is False
+    assert result.acceptance_passed is False
 
 
 def test_stage_filter_excludes_expected_non_verdict_stage(tmp_path: Path) -> None:
@@ -168,6 +176,7 @@ def test_stage_filter_excludes_expected_non_verdict_stage(tmp_path: Path) -> Non
     assert unfiltered.safe_to_consume is False
     assert len(unfiltered.rejected) == 1
     assert filtered.safe_to_consume is True
+    assert filtered.acceptance_passed is True
     assert len(filtered.rejected) == 0
     assert filtered.streams[0].stream_id == "TASK-1::REVIEWER"
 
@@ -184,6 +193,10 @@ def test_unrelated_task_streams_are_not_mixed(tmp_path: Path) -> None:
         VerdictKind.PASS,
         VerdictKind.FAIL,
     ]
+    assert result.safe_to_consume is True
+    assert result.acceptance_passed is False
+    assert result.streams[0].acceptance_passed is True
+    assert result.streams[1].acceptance_passed is False
 
 
 def test_invalid_supersession_target_marks_stream_unsafe(tmp_path: Path) -> None:
@@ -193,6 +206,7 @@ def test_invalid_supersession_target_marks_stream_unsafe(tmp_path: Path) -> None
         [current], supersedes_by_id={current_id: ("missing-evidence",)}
     )
     assert result.safe_to_consume is False
+    assert result.acceptance_passed is False
     assert result.streams[0].verdict.invalid_supersede_ids == ("missing-evidence",)
 
 
@@ -215,6 +229,7 @@ def test_cli_outputs_json_and_nonzero_on_ambiguous(
     assert rc == 2
     output = json.loads(capsys.readouterr().out)
     assert output["safe_to_consume"] is False
+    assert output["acceptance_passed"] is False
     assert output["streams"][0]["verdict"]["kind"] == "AMBIGUOUS"
 
 
@@ -252,4 +267,22 @@ def test_cli_stage_filter_allows_targeted_safe_consumption(
     assert rc == 0
     output = json.loads(capsys.readouterr().out)
     assert output["safe_to_consume"] is True
+    assert output["acceptance_passed"] is True
     assert output["streams"][0]["verdict"]["kind"] == "PROVEN"
+
+
+@pytest.mark.parametrize("decision", ["FAIL", "PARTIAL"])
+def test_cli_distinguishes_valid_nonpassing_verdict_from_unsafe_input(
+    decision: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    receipt = _write_receipt(tmp_path / "receipt.json", decision=decision)
+
+    rc = main(["--receipt", str(receipt)])
+
+    assert rc == 1
+    output = json.loads(capsys.readouterr().out)
+    assert output["safe_to_consume"] is True
+    assert output["acceptance_passed"] is False
+    assert output["streams"][0]["safe_to_consume"] is True
+    assert output["streams"][0]["acceptance_passed"] is False
+    assert output["streams"][0]["verdict"]["kind"] == decision

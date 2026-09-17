@@ -127,9 +127,16 @@ id to the older ids it supersedes:
 ```
 
 Pass it with `--supersession-manifest <path>`. The command exits with code `2`
-when there is no authoritative stream, a same-id content conflict, an ambiguous
-latest verdict, or an invalid supersession relation. A valid authoritative FAIL
-or PARTIAL remains safe to consume as a status; it is never promoted to PASS.
+when there is no authoritative stream, a rejected selected receipt, a same-id
+content conflict, an ambiguous latest verdict, or an invalid supersession
+relation. Exit code `0` means the evidence is safe to consume **and** every
+selected stream has an acceptance-passing verdict (`PASS`, `PROVEN`, or
+`PROVEN_NATIVE_E2E`). Exit code `1` means the evidence is safe to consume but at
+least one selected stream is authoritatively `FAIL` or `PARTIAL`.
+
+JSON output keeps these meanings separate as `safe_to_consume` and
+`acceptance_passed`. Boss/Dev Factory consumers must never use
+`safe_to_consume=true` as a synonym for acceptance success.
 
 ## Run gates
 
