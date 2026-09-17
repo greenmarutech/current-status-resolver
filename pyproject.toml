@@ -9,6 +9,9 @@ description = "Hermes current-status resolver: derives the authoritative current
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+hermes-current-status = "current_status_resolver.runtime_bridge:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
