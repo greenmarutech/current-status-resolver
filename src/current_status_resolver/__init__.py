@@ -9,6 +9,8 @@ from enum import StrEnum
 
 class VerdictKind(StrEnum):
     PASS = "PASS"
+    PROVEN = "PROVEN"
+    PROVEN_NATIVE_E2E = "PROVEN_NATIVE_E2E"
     FAIL = "FAIL"
     PARTIAL = "PARTIAL"
     HOLD = "HOLD"
@@ -127,9 +129,6 @@ class Resolver:
                 invalid_supersede_relations=tuple(invalid_relations),
             )
 
-        # Multiple same-kind entries at the same instant are corroborating, not
-        # conflicting. Use append order only to select the provenance carrier while
-        # preserving every evidence id in history.
         winner = latest[-1]
         return Verdict(
             kind=winner.verdict,
