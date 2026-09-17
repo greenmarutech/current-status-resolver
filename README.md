@@ -93,6 +93,34 @@ The adapter contract was derived from read-only inspection of Frozen Legacy Herm
 
 This validates **format compatibility and fail-closed behavior**. It does not mean the module has been wired into the separate Hermes Agent OS runtime. Runtime wiring remains a distinct integration step and must occur in the Agent OS workspace/repository without modifying Frozen Legacy.
 
+## Read-only runtime bridge
+
+The package includes a narrow filesystem bridge for the Agent OS consumption
+boundary. It scans only JSON files below `receipts` directories, groups evidence
+by `(task_id, stage)`, de-duplicates identical current/history snapshots, and
+returns a JSON current-status record. It does not write to Hermes state, queues,
+receipts, runtime mirrors, or Production.
+
+```bash
+hermes-current-status --receipt-root H:\\Aiwork\\Hermes-Agent-OS
+```
+
+Explicit supersession remains mandatory. A JSON manifest may map a later evidence
+id to the older ids it supersedes:
+
+```json
+{
+  "hermes-receipt/TASK-1/REVIEWER/attempt/2": [
+    "hermes-receipt/TASK-1/REVIEWER/attempt/1"
+  ]
+}
+```
+
+Pass it with `--supersession-manifest <path>`. The command exits with code `2`
+when there is no authoritative stream, a same-id content conflict, an ambiguous
+latest verdict, or an invalid supersession relation. A valid authoritative FAIL
+or PARTIAL remains safe to consume as a status; it is never promoted to PASS.
+
 ## Run gates
 
 ```bash
