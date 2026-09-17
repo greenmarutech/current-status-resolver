@@ -55,12 +55,25 @@ def test_proven_native_e2e_is_supported_when_receipt_states_it_explicitly() -> N
     assert evidence.verdict == VerdictKind.PROVEN_NATIVE_E2E
 
 
-def test_succeeded_without_validation_decision_does_not_become_pass() -> None:
+def test_succeeded_without_validation_does_not_become_pass() -> None:
     receipt = _receipt()
     receipt.pop("validation")
 
     with pytest.raises(ValueError, match="validation is required"):
         evidence_from_hermes_receipt(receipt, evidence_path="receipt.json")
+
+
+def test_succeeded_non_verdict_validation_does_not_become_pass() -> None:
+    receipt = _receipt()
+    # Mirrors successful FACT_GUARDIAN/PUBLISHER receipts: validation exists,
+    # but it contains stage-specific checks rather than an authoritative verdict.
+    receipt["validation"] = {
+        "draft_final_clipboard_identical": True,
+        "publish_status": "REVIEWED_AWAITING_APPROVAL",
+    }
+
+    with pytest.raises(ValueError, match="validation.decision"):
+        evidence_from_hermes_receipt(receipt, evidence_path="receipts/PUBLISHER.json")
 
 
 def test_runtime_mirror_shape_is_not_guessed_into_a_verdict() -> None:
@@ -114,6 +127,23 @@ def test_supersession_is_explicit_and_resolver_preserves_both_attempts() -> None
     assert first.id in verdict.history_ids
     assert first.id in verdict.superseded_ids
     assert verdict.supersession_chain == ((first.id, second.id),)
+
+
+def test_current_snapshot_and_history_copy_cannot_double_count_same_attempt() -> None:
+    current = evidence_from_hermes_receipt(
+        _receipt(),
+        evidence_path="receipts/REVIEWER.json",
+    )
+    history_copy = evidence_from_hermes_receipt(
+        _receipt(),
+        evidence_path="receipts/history/REVIEWER_attempt_1.json",
+    )
+    assert current.id == history_copy.id
+
+    resolver = Resolver()
+    resolver.append(current)
+    with pytest.raises(ValueError, match="duplicate evidence id"):
+        resolver.append(history_copy)
 
 
 def test_adapter_reuses_resolver_timestamp_validation() -> None:
