@@ -4,7 +4,7 @@ Hermes Agent OS module that derives the **authoritative current verdict** from a
 
 ## Why
 
-Hermes keeps historical PASS / FAIL / PARTIAL / HOLD evidence for audit and recovery. Later evidence may explicitly supersede an earlier verdict. The resolver must therefore answer "what is current now?" without deleting the old record or accidentally treating stale evidence as current.
+Hermes keeps historical PASS / FAIL / PARTIAL / HOLD evidence for audit and recovery. Later evidence may explicitly supersede an earlier verdict. The resolver must answer "what is current now?" without deleting the old record or accidentally treating stale evidence as current.
 
 Core rules:
 
@@ -16,7 +16,8 @@ Core rules:
 - conflicting latest verdicts at the same instant return `AMBIGUOUS` rather than guessing;
 - an empty stream returns `HOLD`;
 - missing or chronologically invalid supersession claims remain visible in the result;
-- supersession edges are returned as an auditable chain.
+- supersession edges are returned as an auditable chain;
+- canonical success states used by Hermes are supported directly: `PASS`, `PROVEN`, and `PROVEN_NATIVE_E2E`.
 
 ## Public API
 
@@ -33,7 +34,7 @@ resolver.append(Evidence(
 ))
 resolver.append(Evidence(
     id="E_FIX",
-    verdict=VerdictKind.PASS,
+    verdict=VerdictKind.PROVEN_NATIVE_E2E,
     timestamp="2026-09-17T18:00:00+00:00",
     source="run/2026-09-17/final.md",
     evidence_path="run/2026-09-17/acceptance.json",
@@ -41,7 +42,7 @@ resolver.append(Evidence(
 ))
 
 verdict = resolver.current()
-assert verdict.kind == VerdictKind.PASS
+assert verdict.kind == VerdictKind.PROVEN_NATIVE_E2E
 assert verdict.current_id == "E_FIX"
 assert verdict.superseded_ids == ("E_FAIL",)
 assert verdict.supersession_chain == (("E_FAIL", "E_FIX"),)
@@ -51,7 +52,7 @@ assert verdict.supersession_chain == (("E_FAIL", "E_FIX"),)
 
 `Verdict` exposes:
 
-- `kind`: PASS / FAIL / PARTIAL / HOLD / AMBIGUOUS
+- `kind`: PASS / PROVEN / PROVEN_NATIVE_E2E / FAIL / PARTIAL / HOLD / AMBIGUOUS
 - `current_id`: evidence id carrying the current verdict
 - `history_ids`: every appended evidence id in append order
 - `superseded_ids`: evidence ids invalidated by valid later supersession edges
@@ -70,4 +71,4 @@ ruff check src/ tests/
 mypy src/current_status_resolver/
 ```
 
-The feature branch includes acceptance coverage for historical preservation, explicit supersession, current-status selection, ambiguity, provenance paths, missing targets, empty-stream HOLD, chain traceability, timezone offset ordering, invalid timestamp rejection, duplicate ids, self-supersession, and chronologically invalid supersession edges.
+The acceptance/regression suite covers historical preservation, explicit supersession, current-status selection, ambiguity, provenance paths, missing targets, empty-stream HOLD, chain traceability, timezone offset ordering, invalid timestamp rejection, duplicate ids, self-supersession, chronologically invalid supersession edges, and Hermes `PROVEN` / `PROVEN_NATIVE_E2E` success states.
