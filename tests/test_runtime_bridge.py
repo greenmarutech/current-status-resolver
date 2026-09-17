@@ -125,6 +125,53 @@ def test_non_authoritative_receipt_is_rejected_without_promoting_pass(
     assert len(result.rejected) == 1
 
 
+def test_rejected_receipt_makes_mixed_result_unsafe(tmp_path: Path) -> None:
+    valid = _write_receipt(tmp_path / "valid.json", decision="PASS")
+    rejected = _write_receipt(
+        tmp_path / "rejected.json",
+        attempt=2,
+        decision="PASS",
+        status="FAILED",
+    )
+
+    result = resolve_receipt_files([valid, rejected])
+
+    assert result.streams[0].verdict.kind == VerdictKind.PASS
+    assert len(result.rejected) == 1
+    assert result.safe_to_consume is False
+
+
+def test_stage_filter_excludes_expected_non_verdict_stage(tmp_path: Path) -> None:
+    reviewer = _write_receipt(tmp_path / "reviewer.json", decision="PASS")
+    publisher = _write_receipt(
+        tmp_path / "publisher.json",
+        stage="PUBLISHER",
+        decision="PASS",
+    )
+    publisher.write_text(
+        json.dumps(
+            {
+                "task_id": "TASK-1",
+                "stage": "PUBLISHER",
+                "attempt": 1,
+                "status": "SUCCEEDED",
+                "completed_at": "2026-09-17T09:30:00+09:00",
+                "validation": {"artifact_exists": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    unfiltered = resolve_receipt_files([reviewer, publisher])
+    filtered = resolve_receipt_files([reviewer, publisher], stage="REVIEWER")
+
+    assert unfiltered.safe_to_consume is False
+    assert len(unfiltered.rejected) == 1
+    assert filtered.safe_to_consume is True
+    assert len(filtered.rejected) == 0
+    assert filtered.streams[0].stream_id == "TASK-1::REVIEWER"
+
+
 def test_unrelated_task_streams_are_not_mixed(tmp_path: Path) -> None:
     one = _write_receipt(tmp_path / "one.json", task_id="TASK-1", decision="PASS")
     two = _write_receipt(tmp_path / "two.json", task_id="TASK-2", decision="FAIL")
@@ -169,3 +216,40 @@ def test_cli_outputs_json_and_nonzero_on_ambiguous(
     output = json.loads(capsys.readouterr().out)
     assert output["safe_to_consume"] is False
     assert output["streams"][0]["verdict"]["kind"] == "AMBIGUOUS"
+
+
+def test_cli_stage_filter_allows_targeted_safe_consumption(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    receipts = tmp_path / "receipts"
+    _write_receipt(receipts / "reviewer.json", decision="PROVEN")
+    publisher = _write_receipt(receipts / "publisher.json", stage="PUBLISHER")
+    publisher.write_text(
+        json.dumps(
+            {
+                "task_id": "TASK-1",
+                "stage": "PUBLISHER",
+                "attempt": 1,
+                "status": "SUCCEEDED",
+                "completed_at": "2026-09-17T09:30:00+09:00",
+                "validation": {"artifact_exists": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = main(
+        [
+            "--receipt-root",
+            str(receipts),
+            "--task-id",
+            "TASK-1",
+            "--stage",
+            "REVIEWER",
+        ]
+    )
+
+    assert rc == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["safe_to_consume"] is True
+    assert output["streams"][0]["verdict"]["kind"] == "PROVEN"

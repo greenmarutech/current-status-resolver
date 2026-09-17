@@ -124,12 +124,17 @@ def resolve_receipt_files(
     receipt_paths: Sequence[Path],
     *,
     supersedes_by_id: Mapping[str, tuple[str, ...]] | None = None,
+    task_id: str | None = None,
+    stage: str | None = None,
 ) -> BridgeResult:
     """Resolve authoritative current status from receipt files, fail closed.
 
-    Non-authoritative or malformed receipts are reported and skipped. Identical
-    current/history snapshots are de-duplicated by logical evidence id. Conflicting
-    content for one logical id makes that stream ``AMBIGUOUS`` and unsafe.
+    Non-authoritative or malformed receipts are reported and make the overall
+    result unsafe. Callers scanning a heterogeneous receipt root should select the
+    intended task/stage explicitly; receipts outside that selection are ignored
+    before authoritative-verdict validation. Identical current/history snapshots
+    are de-duplicated by logical evidence id. Conflicting content for one logical
+    id makes that stream ``AMBIGUOUS`` and unsafe.
     """
     supersession = dict(supersedes_by_id or {})
     loaded: list[_LoadedEvidence] = []
@@ -141,8 +146,12 @@ def resolve_receipt_files(
             raw = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
                 raise ValueError("receipt JSON must be an object")
-            task_id = _required_receipt_field(raw, "task_id")
-            stage = _required_receipt_field(raw, "stage")
+            receipt_task_id = _required_receipt_field(raw, "task_id")
+            receipt_stage = _required_receipt_field(raw, "stage")
+            if task_id is not None and receipt_task_id != task_id:
+                continue
+            if stage is not None and receipt_stage != stage:
+                continue
             probe = evidence_from_hermes_receipt(raw, evidence_path=display_path)
             evidence = replace(
                 probe,
@@ -150,7 +159,7 @@ def resolve_receipt_files(
             )
             validator = Resolver()
             validator.append(evidence)
-            loaded.append(_LoadedEvidence(task_id, stage, evidence))
+            loaded.append(_LoadedEvidence(receipt_task_id, receipt_stage, evidence))
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             rejected.append(RejectedReceipt(display_path, str(exc)))
 
@@ -216,7 +225,7 @@ def resolve_receipt_files(
             )
         )
 
-    overall_safe = bool(stream_results) and all(
+    overall_safe = not rejected and bool(stream_results) and all(
         stream.safe_to_consume for stream in stream_results
     )
     return BridgeResult(
@@ -248,6 +257,14 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional JSON object mapping evidence ids to explicitly superseded ids.",
     )
+    parser.add_argument(
+        "--task-id",
+        help="Only consume receipts whose receipt.task_id exactly matches this value.",
+    )
+    parser.add_argument(
+        "--stage",
+        help="Only consume receipts whose receipt.stage exactly matches this value.",
+    )
     return parser
 
 
@@ -260,7 +277,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             else tuple(args.receipt or ())
         )
         supersession = _read_supersession_manifest(args.supersession_manifest)
-        result = resolve_receipt_files(paths, supersedes_by_id=supersession)
+        result = resolve_receipt_files(
+            paths,
+            supersedes_by_id=supersession,
+            task_id=args.task_id,
+            stage=args.stage,
+        )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(json.dumps({"safe_to_consume": False, "error": str(exc)}, indent=2))
         return 2

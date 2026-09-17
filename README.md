@@ -102,8 +102,18 @@ returns a JSON current-status record. It does not write to Hermes state, queues,
 receipts, runtime mirrors, or Production.
 
 ```bash
-hermes-current-status --receipt-root H:\\Aiwork\\Hermes-Agent-OS
+hermes-current-status \
+  --receipt-root H:\\Aiwork\\Hermes-Agent-OS \
+  --task-id <TASK_ID> \
+  --stage REVIEWER
 ```
+
+The task/stage selectors are the safe operational mode when the root also contains
+successful non-verdict receipts from stages such as Publisher or Fact Guardian.
+Without selectors, every discovered receipt is evaluated; any malformed or
+non-authoritative receipt is reported in `rejected` and makes the overall
+`safe_to_consume` value false. This prevents a stale accepted verdict from being
+consumed when a newer candidate receipt could not be parsed or validated.
 
 Explicit supersession remains mandatory. A JSON manifest may map a later evidence
 id to the older ids it supersedes:
